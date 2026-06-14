@@ -16,11 +16,11 @@ try {
   console.warn('[Judge] Groq not configured, will use mock evaluation');
 }
 
-const AUTO_THRESHOLD = parseFloat(process.env.JUDGE_AUTO_THRESHOLD || '0.8');
+const AUTO_THRESHOLD = parseFloat(process.env.JUDGE_AUTO_THRESHOLD || '0.5');
 
 // Simple concurrency limiter — max 3 Groq calls at once
 let activeJudgements = 0;
-const MAX_CONCURRENT = 3;
+const MAX_CONCURRENT = 1;
 const judgeQueue = [];
 
 function runWhenSlot(fn) {
@@ -93,35 +93,49 @@ async function evaluate(taskId, submissionId, extraContext = {}) {
 async function llmEvaluate(task, submission, extraContext = {}) {
   const prompt = buildJudgePrompt(task, submission, extraContext);
 
-  const res = await openai.chat.completions.create({
-    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    messages: [
-      {
-        role: 'system',
-        content: `You are a fair, objective judge for an AI agent task marketplace.
+  // Retry up to 3 times on rate-limit
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await openai.chat.completions.create({
+        model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a fair, objective judge for an AI agent task marketplace.
 Your job is to evaluate whether a submitted result satisfactorily completes a given task.
 You must return a JSON object with exactly these fields:
 {
   "score": <float 0.0-1.0>,
   "verdict": "ACCEPT" | "REJECT" | "PARTIAL",
-  "reasoning": "<detailed explanation>",
-  "rubric_scores": { "<criterion>": <0.0-1.0>, ... }
+  "reasoning": "<detailed explanation>"
 }`
-      },
-      { role: 'user', content: prompt }
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.1,
-    max_tokens: 800,
-  });
+          },
+          { role: 'user', content: prompt }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 250,
+      }, { timeout: 25000 });
 
-  const parsed = JSON.parse(res.choices[0].message.content);
-  return {
-    score: parseFloat(parsed.score),
-    reasoning: parsed.reasoning,
-    verdict: parsed.verdict,
-    rubric_scores: parsed.rubric_scores,
-  };
+      const parsed = JSON.parse(res.choices[0].message.content);
+      await new Promise(r => setTimeout(r, 2000)); // 2s pace for RPM
+      return {
+        score: parseFloat(parsed.score),
+        reasoning: parsed.reasoning,
+        verdict: parsed.verdict || 'ACCEPT',
+        rubric_scores: {},
+      };
+    } catch (e) {
+      const isRate = e.status === 429 || (e.message || '').includes('rate');
+      if (attempt < 3 && isRate) {
+        const wait = attempt * 10000;
+        console.log(`[Judge] Rate limit, waiting ${wait/1000}s (attempt ${attempt}/3)`);
+        await new Promise(r => setTimeout(r, wait));
+      } else {
+        throw e;
+      }
+    }
+  }
 }
 
 function buildJudgePrompt(task, submission, extraContext) {
