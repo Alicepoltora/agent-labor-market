@@ -152,14 +152,29 @@ const TASKS = [
   },
 ];
 
+// Extra tasks to ensure every agent has something to grab
+const EXTRA_TASKS = [
+  { title: 'Write a LinkedIn post about Web3 and AI convergence', description: 'Write an engaging LinkedIn post (150-200 words) about how Web3 and AI are converging. Include a personal insight, 3 key trends, and a question to drive comments.', capabilities_required: ['writing', 'content'], reward: 0.03, evaluation_rubric: 'Score 0-1: 150-200 words (0.3), covers both Web3 and AI (0.4), ends with engaging question (0.3). Accept >= 0.75' },
+  { title: 'Debug this Python dictionary error', description: 'Find and fix all bugs:\n```python\nconfig = {"host": "localhost", "port": 8080}\nprint(config["database"])\nconfig["port"] = "8080"\ntimeout = config.get["timeout"]\n```', capabilities_required: ['coding', 'debugging'], reward: 0.03, evaluation_rubric: 'Score 0-1: finds KeyError (0.35), finds .get() called as attribute not method (0.35), notes port type mismatch (0.3). Accept >= 0.7' },
+  { title: 'Translate English product tagline to 3 languages', description: 'Translate to Spanish, German, and Japanese:\n"The marketplace where AI works for you — automatically, 24/7, in USDC."', capabilities_required: ['translation'], reward: 0.03, evaluation_rubric: 'Score 0-1: all 3 languages present (0.6), translations are natural (0.4). Accept >= 0.8' },
+  { title: 'Analyze keyword density for this paragraph', description: 'Analyze the SEO keyword density of:\n"Agent Labor Market is the best AI agent marketplace. Our AI marketplace connects AI agents with tasks. The AI agent ecosystem is growing fast. Join the leading AI marketplace today."\n\nIdentify over-used keywords, calculate approximate density %, and suggest improvements.', capabilities_required: ['seo', 'analysis'], reward: 0.03, evaluation_rubric: 'Score 0-1: identifies "AI" and "marketplace" as over-used (0.4), provides density estimate (0.3), gives rewrite suggestion (0.3). Accept >= 0.7' },
+  { title: 'Extract all emails and names from this text', description: 'Extract structured JSON from:\n"Please contact Sarah Johnson (sarah.j@company.com) or Mike Chen (m.chen@startup.io) for support. For billing, email billing@company.com. CEO James Wright can be reached at j.wright@company.com."', capabilities_required: ['data', 'extraction'], reward: 0.03, evaluation_rubric: 'Score 0-1: valid JSON (0.3), captures all 4 emails (0.4), matches names to emails (0.3). Accept >= 0.8' },
+  { title: 'Summarize this AI research abstract', description: 'Provide TLDR + 3 key findings for:\n"We present a novel framework for multi-agent coordination in distributed systems. Our approach uses hierarchical task decomposition combined with consensus-based reward sharing. Experiments across 12 benchmark environments show 34% improvement over baseline single-agent systems. The framework scales linearly with agent count up to 1000 agents and demonstrates emergent cooperative behaviors not explicitly programmed. Cost per task decreases 67% as agent pool size doubles, suggesting strong network effects."', capabilities_required: ['summarization', 'research'], reward: 0.03, evaluation_rubric: 'Score 0-1: TLDR in 1-2 sentences (0.3), exactly 3 key findings (0.4), captures 34% and 67% numbers (0.3). Accept >= 0.75' },
+  { title: 'Write 3 different tweet hooks about passive income with AI', description: 'Write 3 tweet opening hooks (first line only, max 100 chars each) about earning passive income using AI agents. Each must use a different rhetorical device: 1) Question, 2) Bold claim, 3) Story opening.', capabilities_required: ['twitter', 'social-media', 'writing'], reward: 0.03, evaluation_rubric: 'Score 0-1: 3 hooks present (0.3), each under 100 chars (0.3), different rhetorical devices (0.4). Accept >= 0.75' },
+  { title: 'Write a follow-up email after a demo call', description: 'Write a follow-up email from an AI startup founder to a potential enterprise client after a 30-min demo call about Agent Labor Market. Reference discussing "automating their customer support with AI agents" and next steps being "a 2-week pilot". Max 150 words.', capabilities_required: ['email', 'writing', 'communication'], reward: 0.03, evaluation_rubric: 'Score 0-1: references the demo and customer support (0.3), mentions 2-week pilot (0.3), professional tone with clear next step (0.4). Accept >= 0.75' },
+  { title: 'Write product description for AI Agent SDK', description: 'Write a product description for: "AgentSDK — npm package that lets developers integrate AI agents into any Node.js app in under 10 minutes. Features: task publishing, agent wallet management, automatic USDC payouts, webhooks."', capabilities_required: ['ecommerce', 'product', 'writing'], reward: 0.03, evaluation_rubric: 'Score 0-1: leads with developer benefit (0.3), mentions key features naturally (0.3), includes "10 minutes" hook (0.2), has CTA (0.2). Accept >= 0.75' },
+  { title: 'Fact-check claims about blockchain scalability', description: 'Verify as TRUE/FALSE/UNVERIFIABLE:\n1. Ethereum processes ~15 transactions per second on its base layer\n2. Solana has never experienced a network outage\n3. Bitcoin has a maximum supply of 21 million coins\n4. The Lightning Network enables instant Bitcoin micropayments', capabilities_required: ['fact-checking', 'research', 'verification'], reward: 0.03, evaluation_rubric: 'Score 0-1: evaluates all 4 (0.4), correct: #1 TRUE, #2 FALSE, #3 TRUE, #4 TRUE (0.6). Accept >= 0.7' },
+];
+
 async function main() {
-  console.log('\n🎯 ORCHESTRATOR — creating 20 tasks for the marketplace\n');
+  console.log('\n🎯 ORCHESTRATOR — creating 30 tasks for the marketplace\n');
   console.log(`API: ${API}\n`);
 
   const created = [];
+  const ALL_TASKS = [...TASKS, ...EXTRA_TASKS];
 
-  for (let i = 0; i < TASKS.length; i++) {
-    const t = TASKS[i];
+  for (let i = 0; i < ALL_TASKS.length; i++) {
+    const t = ALL_TASKS[i];
     try {
       const res = await axios.post(`${API}/api/tasks`, {
         ...t,
@@ -174,11 +189,12 @@ async function main() {
     }
   }
 
-  console.log(`\n🚀 Created ${created.length}/20 tasks`);
+  console.log(`\n🚀 Created ${created.length}/${ALL_TASKS.length} tasks`);
   console.log('📊 Stats:');
-  const total = TASKS.reduce((s, t) => s + t.reward, 0);
+  const total = ALL_TASKS.reduce((s, t) => s + t.reward, 0);
   console.log(`   Total value locked: ${total.toFixed(2)} USDC`);
   console.log('\nNow run:  node demo-agents/run-all.js\n');
+  console.log(`💡 Tip: agents start with 1.5s stagger → ~${ALL_TASKS.length} tasks / 20 agents = less collision\n`);
 }
 
 main().catch(console.error);
