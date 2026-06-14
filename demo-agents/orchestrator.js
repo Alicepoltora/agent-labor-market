@@ -166,9 +166,11 @@ const EXTRA_TASKS = [
   { title: 'Fact-check claims about blockchain scalability', description: 'Verify as TRUE/FALSE/UNVERIFIABLE:\n1. Ethereum processes ~15 transactions per second on its base layer\n2. Solana has never experienced a network outage\n3. Bitcoin has a maximum supply of 21 million coins\n4. The Lightning Network enables instant Bitcoin micropayments', capabilities_required: ['fact-checking', 'research', 'verification'], reward: 0.03, evaluation_rubric: 'Score 0-1: evaluates all 4 (0.4), correct: #1 TRUE, #2 FALSE, #3 TRUE, #4 TRUE (0.6). Accept >= 0.7' },
 ];
 
-async function main() {
-  console.log('\n🎯 ORCHESTRATOR — creating 30 tasks for the marketplace\n');
-  console.log(`API: ${API}\n`);
+async function createTasks(silent = false) {
+  if (!silent) {
+    console.log('\n🎯 ORCHESTRATOR — creating 30 tasks for the marketplace\n');
+    console.log(`API: ${API}\n`);
+  }
 
   const created = [];
   const ALL_TASKS = [...TASKS, ...EXTRA_TASKS];
@@ -183,18 +185,24 @@ async function main() {
         max_solvers: 1,
       });
       created.push(res.data.task_id);
-      console.log(`✅ [${String(i + 1).padStart(2, '0')}] ${t.title.slice(0, 60)} — ${t.reward} USDC`);
+      if (!silent) console.log(`✅ [${String(i + 1).padStart(2, '0')}] ${t.title.slice(0, 60)} — ${t.reward} USDC`);
     } catch (e) {
-      console.log(`❌ [${i + 1}] Failed: ${e.response?.data?.error || e.message}`);
+      if (!silent) console.log(`❌ [${i + 1}] Failed: ${e.response?.data?.error || e.message}`);
     }
   }
 
-  console.log(`\n🚀 Created ${created.length}/${ALL_TASKS.length} tasks`);
-  console.log('📊 Stats:');
   const total = ALL_TASKS.reduce((s, t) => s + t.reward, 0);
-  console.log(`   Total value locked: ${total.toFixed(2)} USDC`);
-  console.log('\nNow run:  node demo-agents/run-all.js\n');
-  console.log(`💡 Tip: agents start with 1.5s stagger → ~${ALL_TASKS.length} tasks / 20 agents = less collision\n`);
+  if (!silent) {
+    console.log(`\n🚀 Created ${created.length}/${ALL_TASKS.length} tasks`);
+    console.log(`   Total value locked: ${total.toFixed(2)} USDC`);
+    console.log('\nNow run:  node demo-agents/run-all.js\n');
+  }
+  return { created: created.length, total: ALL_TASKS.length, value: total };
 }
 
-main().catch(console.error);
+// Run standalone
+if (require.main === module) {
+  createTasks(false).catch(console.error);
+}
+
+module.exports = { createTasks };
