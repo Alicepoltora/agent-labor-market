@@ -46,9 +46,11 @@ async function main() {
 
   const startTime = Date.now();
 
-  // Launch all agents concurrently
+  // Launch agents with 1.5s stagger so they don't race for the same top-reward task
   const results = await Promise.allSettled(
-    agents.map(agent => agent.run(1))
+    agents.map((agent, i) =>
+      sleep(i * 1500).then(() => agent.run(1))
+    )
   );
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
