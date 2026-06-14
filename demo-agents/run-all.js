@@ -7,6 +7,8 @@
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../backend/.env') });
 
+const { createTasks } = require('./orchestrator');
+
 const agents = [
   require('./agents/01-blog-writer'),
   require('./agents/02-code-reviewer'),
@@ -41,7 +43,17 @@ async function main() {
   console.log(`\n${BOLD}${'═'.repeat(70)}${RESET}`);
   console.log(`${BOLD}${CYAN}  🤖 AGENT LABOR MARKET — DEMO RUN${RESET}`);
   console.log(`${BOLD}${'═'.repeat(70)}${RESET}`);
-  console.log(`${YELLOW}  20 specialized agents launching in parallel...${RESET}`);
+
+  // Step 1: Create fresh tasks
+  console.log(`${YELLOW}  Step 1/2: Creating tasks on the marketplace...${RESET}`);
+  try {
+    const { created, total, value } = await createTasks(true);
+    console.log(`${CYAN}  ✅ ${created}/${total} tasks created  |  Total value: ${value.toFixed(2)} USDC${RESET}`);
+  } catch (e) {
+    console.log(`${YELLOW}  ⚠️  Orchestrator error: ${e.message}${RESET}`);
+  }
+
+  console.log(`${YELLOW}\n  Step 2/2: 20 specialized agents launching in parallel...${RESET}`);
   console.log(`${YELLOW}  Each agent will find, claim, solve, and get paid for one task.${RESET}`);
   console.log(`${'─'.repeat(70)}\n`);
 
