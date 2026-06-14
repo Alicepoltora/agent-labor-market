@@ -11,8 +11,12 @@ const OpenAI = require('openai');
 const API = process.env.API_URL || 'http://localhost:3000';
 const POLL_INTERVAL_MS = 5000;
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+// Groq is OpenAI-compatible
+const openai = process.env.GROQ_API_KEY
+  ? new OpenAI({
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1',
+    })
   : null;
 
 const SOLVER_ID = `solver-${Date.now()}`;
@@ -145,7 +149,7 @@ For a solo developer building a SaaS: **Cursor**. It combines the familiar VS Co
   }
 
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
     messages: [
       {
         role: 'system',
