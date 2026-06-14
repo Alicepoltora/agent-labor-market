@@ -56,14 +56,17 @@ class BaseAgent {
   }
 
   async findTask() {
+    const list = await this.findTaskList();
+    return list[0] || null;
+  }
+
+  async findTaskList() {
     const caps = this.capabilities.join(',');
-    const res = await axios.get(`${API}/api/tasks?status=open&capabilities=${caps}&limit=10`);
-    const tasks = res.data.tasks;
-    // Pick task that requires at least one of our capabilities (or no specific caps)
-    return tasks.find(t =>
+    const res = await axios.get(`${API}/api/tasks?status=open&capabilities=${caps}&limit=20`);
+    return res.data.tasks.filter(t =>
       t.capabilities_required.length === 0 ||
       t.capabilities_required.some(c => this.capabilities.includes(c))
-    ) || null;
+    );
   }
 
   async claimTask(task) {
@@ -130,28 +133,33 @@ class BaseAgent {
   }
 
   async _runOnce() {
-    // Poll until task found
+    // Poll + claim loop — retry until we successfully claim a task
     this.log(`🔍 Ищу задачу...`);
     let task = null;
-    let attempts = 0;
+    let waitCount = 0;
+
     while (!task) {
-      task = await this.findTask();
-      if (!task) {
-        if (++attempts % 3 === 0) this.log(`⏳ Жду задачу... (${attempts * POLL_MS / 1000}s)`);
+      const candidates = await this.findTaskList();
+      let claimed = false;
+
+      for (const candidate of candidates) {
+        try {
+          await this.claimTask(candidate);
+          task = candidate;
+          claimed = true;
+          break;
+        } catch (e) {
+          // Task was claimed by another agent — try next
+        }
+      }
+
+      if (!claimed) {
+        if (++waitCount % 3 === 0) this.log(`⏳ Жду доступную задачу... (${waitCount * POLL_MS / 1000}s)`);
         await sleep(POLL_MS);
       }
     }
 
-    this.log(`🎯 Нашёл: "${task.title.slice(0, 50)}..." [${task.reward} USDC]`);
-
-    // Claim
-    try {
-      await this.claimTask(task);
-      this.log(`🔒 Задача захвачена`);
-    } catch (e) {
-      this.log(`⚠️  Не смог захватить (${e.response?.data?.error || e.message}), ищу другую`);
-      return;
-    }
+    this.log(`🎯 Захватил: "${task.title.slice(0, 50)}..." [${task.reward} USDC]`);
 
     // Solve
     this.log(`🧠 Решаю...`);
