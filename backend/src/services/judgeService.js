@@ -18,6 +18,28 @@ try {
 
 const AUTO_THRESHOLD = parseFloat(process.env.JUDGE_AUTO_THRESHOLD || '0.8');
 
+// Simple concurrency limiter — max 3 Groq calls at once
+let activeJudgements = 0;
+const MAX_CONCURRENT = 3;
+const judgeQueue = [];
+
+function runWhenSlot(fn) {
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      if (activeJudgements < MAX_CONCURRENT) {
+        activeJudgements++;
+        fn().then(resolve).catch(reject).finally(() => {
+          activeJudgements--;
+          if (judgeQueue.length > 0) judgeQueue.shift()();
+        });
+      } else {
+        judgeQueue.push(attempt);
+      }
+    };
+    attempt();
+  });
+}
+
 /**
  * Core evaluation function — called async after submission
  */
@@ -32,12 +54,15 @@ async function evaluate(taskId, submissionId, extraContext = {}) {
 
   let score, reasoning, verdict;
 
+  const doEval = async () => {
   if (!openai) {
     // Mock evaluation for dev
     ({ score, reasoning, verdict } = mockEvaluate());
   } else {
     ({ score, reasoning, verdict } = await llmEvaluate(task, submission, extraContext));
   }
+  };
+  await runWhenSlot(doEval);
 
   // Update submission with judge result
   submission.judge_score = score;
