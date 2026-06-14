@@ -90,8 +90,8 @@ router.get('/', [
   if (capabilities) {
     const caps = capabilities.split(',').map(c => c.trim());
     result = result.filter(t =>
-      caps.every(cap => t.capabilities_required.includes(cap)) ||
-      t.capabilities_required.length === 0
+      t.capabilities_required.length === 0 ||
+      t.capabilities_required.some(c => caps.includes(c))
     );
   }
   if (min_reward) result = result.filter(t => t.reward >= parseFloat(min_reward));
