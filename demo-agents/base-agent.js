@@ -81,16 +81,30 @@ class BaseAgent {
     if (!groq) {
       return `[MOCK SOLUTION by ${this.name}] ${task.description.slice(0, 200)}`;
     }
-    const res = await groq.chat.completions.create({
-      model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
-      messages: [
-        { role: 'system', content: this.systemPrompt },
-        { role: 'user', content: `TASK: ${task.title}\n\n${task.description}` },
-      ],
-      temperature: 0.7,
-      max_tokens: 600,
-    });
-    return res.choices[0].message.content;
+    // Retry up to 3 times on rate-limit (429) or transient errors
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await groq.chat.completions.create({
+          model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+          messages: [
+            { role: 'system', content: this.systemPrompt },
+            { role: 'user', content: `TASK: ${task.title}\n\n${task.description}` },
+          ],
+          temperature: 0.7,
+          max_tokens: 600,
+        });
+        return res.choices[0].message.content;
+      } catch (e) {
+        const isRateLimit = e.status === 429 || (e.message || '').includes('rate');
+        if (attempt < 3 && isRateLimit) {
+          const wait = attempt * 10000; // 10s, 20s
+          this.log(`⏳ Rate limit при solve(), жду ${wait / 1000}s (попытка ${attempt}/3)`);
+          await sleep(wait);
+        } else {
+          throw e;
+        }
+      }
+    }
   }
 
   async submitResult(task, result) {
@@ -101,7 +115,7 @@ class BaseAgent {
     return res.data.submission_id;
   }
 
-  async waitForVerdict(taskId, timeoutMs = 90000) {
+  async waitForVerdict(taskId, timeoutMs = 180000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       await sleep(3000);
