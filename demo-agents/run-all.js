@@ -30,6 +30,7 @@ const agents = [
   require('./agents/20-news-digest'),
 ];
 
+const { sleep } = require('./base-agent');
 const BOLD = '\x1b[1m';
 const RESET = '\x1b[0m';
 const GREEN = '\x1b[32m';
