@@ -16,6 +16,29 @@ const groq = process.env.GROQ_API_KEY
     })
   : null;
 
+// Global concurrency limiter for Groq solve() calls — shared across all agent instances
+// Prevents hitting rate limits when 20 agents solve simultaneously
+const MAX_SOLVE_CONCURRENT = 3;
+let activeSolves = 0;
+const solveQueue = [];
+
+function solveWhenSlot(fn) {
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      if (activeSolves < MAX_SOLVE_CONCURRENT) {
+        activeSolves++;
+        fn().then(resolve).catch(reject).finally(() => {
+          activeSolves--;
+          if (solveQueue.length > 0) solveQueue.shift()();
+        });
+      } else {
+        solveQueue.push(attempt);
+      }
+    };
+    attempt();
+  });
+}
+
 // ANSI color palette — each agent gets a unique color
 const COLORS = [
   '\x1b[31m', '\x1b[32m', '\x1b[33m', '\x1b[34m', '\x1b[35m',
@@ -81,30 +104,32 @@ class BaseAgent {
     if (!groq) {
       return `[MOCK SOLUTION by ${this.name}] ${task.description.slice(0, 200)}`;
     }
-    // Retry up to 3 times on rate-limit (429) or transient errors
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const res = await groq.chat.completions.create({
-          model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
-          messages: [
-            { role: 'system', content: this.systemPrompt },
-            { role: 'user', content: `TASK: ${task.title}\n\n${task.description}` },
-          ],
-          temperature: 0.7,
-          max_tokens: 600,
-        });
-        return res.choices[0].message.content;
-      } catch (e) {
-        const isRateLimit = e.status === 429 || (e.message || '').includes('rate');
-        if (attempt < 3 && isRateLimit) {
-          const wait = attempt * 10000; // 10s, 20s
-          this.log(`⏳ Rate limit при solve(), жду ${wait / 1000}s (попытка ${attempt}/3)`);
-          await sleep(wait);
-        } else {
-          throw e;
+    // Use global semaphore — max 3 agents solve simultaneously to avoid Groq rate limits
+    return solveWhenSlot(async () => {
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        try {
+          const res = await groq.chat.completions.create({
+            model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
+            messages: [
+              { role: 'system', content: this.systemPrompt },
+              { role: 'user', content: `TASK: ${task.title}\n\n${task.description}` },
+            ],
+            temperature: 0.7,
+            max_tokens: 600,
+          });
+          return res.choices[0].message.content;
+        } catch (e) {
+          const isRateLimit = e.status === 429 || (e.message || '').includes('rate');
+          if (attempt < 4 && isRateLimit) {
+            const wait = attempt * 8000 + Math.random() * 4000; // jitter: 8-12s, 16-20s, 24-28s
+            this.log(`⏳ Rate limit, жду ${(wait / 1000).toFixed(0)}s (попытка ${attempt}/4)`);
+            await sleep(wait);
+          } else {
+            throw e;
+          }
         }
       }
-    }
+    });
   }
 
   async submitResult(task, result) {
