@@ -2,11 +2,18 @@ const OpenAI = require('openai');
 const taskStore = require('./taskStore');
 const circleService = require('./circleService');
 
+// Groq is OpenAI-compatible — same SDK, different baseURL + key
 let openai;
 try {
-  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  if (process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'your_groq_api_key_here') {
+    openai = new OpenAI({
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1',
+    });
+    console.log('[Judge] Using Groq API');
+  }
 } catch (e) {
-  console.warn('[Judge] OpenAI not configured, will use mock evaluation');
+  console.warn('[Judge] Groq not configured, will use mock evaluation');
 }
 
 const AUTO_THRESHOLD = parseFloat(process.env.JUDGE_AUTO_THRESHOLD || '0.8');
@@ -25,7 +32,7 @@ async function evaluate(taskId, submissionId, extraContext = {}) {
 
   let score, reasoning, verdict;
 
-  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_key_here') {
+  if (!openai) {
     // Mock evaluation for dev
     ({ score, reasoning, verdict } = mockEvaluate());
   } else {
@@ -62,7 +69,7 @@ async function llmEvaluate(task, submission, extraContext = {}) {
   const prompt = buildJudgePrompt(task, submission, extraContext);
 
   const res = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
     messages: [
       {
         role: 'system',
