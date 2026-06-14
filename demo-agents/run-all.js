@@ -59,10 +59,10 @@ async function main() {
 
   const startTime = Date.now();
 
-  // Launch agents with 2s stagger — solve() semaphore handles rate limiting
+  // Launch agents with 4s stagger to spread Groq API calls and reduce rate-limit hits
   const results = await Promise.allSettled(
     agents.map((agent, i) =>
-      sleep(i * 2000).then(() => agent.run(1))
+      sleep(i * 4000).then(() => agent.run(1))
     )
   );
 

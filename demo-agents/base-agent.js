@@ -18,7 +18,7 @@ const groq = process.env.GROQ_API_KEY
 
 // Global concurrency limiter for Groq solve() calls — shared across all agent instances
 // Prevents hitting rate limits when 20 agents solve simultaneously
-const MAX_SOLVE_CONCURRENT = 1;
+const MAX_SOLVE_CONCURRENT = 3;
 let activeSolves = 0;
 const solveQueue = [];
 
@@ -115,10 +115,8 @@ class BaseAgent {
               { role: 'user', content: `TASK: ${task.title}\n\n${task.description}` },
             ],
             temperature: 0.7,
-            max_tokens: 500,
+            max_tokens: 600,
           });
-          // 4s pause to keep combined Groq RPM ≤ 30 (shared with judge)
-          await sleep(4000);
           return res.choices[0].message.content;
         } catch (e) {
           const isRateLimit = e.status === 429 || (e.message || '').includes('rate');
@@ -142,7 +140,7 @@ class BaseAgent {
     return res.data.submission_id;
   }
 
-  async waitForVerdict(taskId, timeoutMs = 600000) {
+  async waitForVerdict(taskId, timeoutMs = 180000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       await sleep(3000);
