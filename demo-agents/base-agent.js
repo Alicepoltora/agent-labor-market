@@ -98,7 +98,7 @@ class BaseAgent {
     return res.data.submission_id;
   }
 
-  async waitForVerdict(taskId, timeoutMs = 20000) {
+  async waitForVerdict(taskId, timeoutMs = 90000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       await sleep(3000);
