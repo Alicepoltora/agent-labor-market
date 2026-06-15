@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const taskStore = require('./taskStore');
 const circleService = require('./circleService');
+const blockchain = require('./blockchainService');
 
 // Groq is OpenAI-compatible — same SDK, different baseURL + key
 let openai;
@@ -18,7 +19,7 @@ try {
 
 const AUTO_THRESHOLD = parseFloat(process.env.JUDGE_AUTO_THRESHOLD || '0.5');
 
-// Simple concurrency limiter — max 3 Groq calls at once
+// Simple concurrency limiter — max 1 Groq call at once
 let activeJudgements = 0;
 const MAX_CONCURRENT = 1;
 const judgeQueue = [];
@@ -55,28 +56,24 @@ async function evaluate(taskId, submissionId, extraContext = {}) {
   let score, reasoning, verdict;
 
   const doEval = async () => {
-  if (!openai) {
-    // Mock evaluation for dev
-    ({ score, reasoning, verdict } = mockEvaluate());
-  } else {
-    ({ score, reasoning, verdict } = await llmEvaluate(task, submission, extraContext));
-  }
+    if (!openai) {
+      ({ score, reasoning, verdict } = mockEvaluate());
+    } else {
+      ({ score, reasoning, verdict } = await llmEvaluate(task, submission, extraContext));
+    }
   };
   await runWhenSlot(doEval);
 
-  // Update submission with judge result
   submission.judge_score = score;
   submission.judge_reasoning = reasoning;
   submission.judge_verdict = verdict;
   submission.evaluated_at = new Date().toISOString();
 
   if (score >= AUTO_THRESHOLD && verdict === 'ACCEPT') {
-    // Auto-release escrow to solver
     await handleAccept(task, submission);
   } else if (verdict === 'REJECT' || score < 0.3) {
     await handleReject(task, submission);
   } else {
-    // Borderline — flag for manual review (or re-evaluate)
     task.status = 'disputed';
     task.judge_flag = { score, reasoning, flagged_at: new Date().toISOString() };
   }
@@ -88,12 +85,11 @@ async function evaluate(taskId, submissionId, extraContext = {}) {
 }
 
 /**
- * LLM evaluation via GPT-4o mini
+ * LLM evaluation via Groq
  */
 async function llmEvaluate(task, submission, extraContext = {}) {
   const prompt = buildJudgePrompt(task, submission, extraContext);
 
-  // Retry up to 3 times on rate-limit
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const res = await openai.chat.completions.create({
@@ -118,7 +114,7 @@ You must return a JSON object with exactly these fields:
       }, { timeout: 25000 });
 
       const parsed = JSON.parse(res.choices[0].message.content);
-      await new Promise(r => setTimeout(r, 2000)); // 2s pace for RPM
+      await new Promise(r => setTimeout(r, 2000));
       return {
         score: parseFloat(parsed.score),
         reasoning: parsed.reasoning,
@@ -129,7 +125,7 @@ You must return a JSON object with exactly these fields:
       const isRate = e.status === 429 || (e.message || '').includes('rate');
       if (attempt < 3 && isRate) {
         const wait = attempt * 10000;
-        console.log(`[Judge] Rate limit, waiting ${wait/1000}s (attempt ${attempt}/3)`);
+        console.log(`[Judge] Rate limit, waiting ${wait / 1000}s (attempt ${attempt}/3)`);
         await new Promise(r => setTimeout(r, wait));
       } else {
         throw e;
@@ -167,21 +163,35 @@ async function handleAccept(task, submission) {
 
   const netReward = task.reward - task.platform_fee;
 
+  // Circle USDC escrow release (mock / existing)
   try {
     const tx = await circleService.releaseEscrow({
       escrowWalletId: task.escrow_wallet,
       toAddress: solver.solver_wallet,
       amount: netReward,
     });
-
-    task.status = 'completed';
-    task.completed_at = new Date().toISOString();
     task.payout_tx = tx.id;
     console.log(`[Judge] ✅ Released ${netReward} USDC to ${solver.solver_wallet}, tx: ${tx.id}`);
   } catch (err) {
-    console.error('[Judge] Release failed:', err.message);
-    task.status = 'disputed';
+    console.error('[Judge] Circle release failed:', err.message);
     task.payout_error = err.message;
+  }
+
+  task.status = 'completed';
+  task.completed_at = new Date().toISOString();
+
+  // On-chain USDC payment — direct transfer on ARC Testnet
+  if (solver.solver_wallet && blockchain.isEnabled()) {
+    try {
+      const onChainTx = await blockchain.payAgentDirectly(solver.solver_wallet, netReward);
+      if (onChainTx) {
+        task.on_chain_tx = onChainTx.txHash;
+        task.on_chain_explorer = onChainTx.explorerUrl;
+        console.log(`[Judge] 🔗 On-chain tx: ${onChainTx.explorerUrl}`);
+      }
+    } catch (err) {
+      console.error('[Judge] On-chain payment failed:', err.message);
+    }
   }
 }
 
@@ -203,7 +213,7 @@ async function handleReject(task, submission) {
 }
 
 function mockEvaluate() {
-  const score = 0.85 + Math.random() * 0.15; // High score in mock
+  const score = 0.85 + Math.random() * 0.15;
   return {
     score,
     reasoning: `[MOCK] Task evaluated with score ${score.toFixed(2)}. The submission adequately addresses the task requirements.`,
